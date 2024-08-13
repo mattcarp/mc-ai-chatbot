@@ -35,87 +35,25 @@ import { SpinnerMessage, UserMessage } from '@/components/stocks/message'
 import { Chat, Message } from '@/lib/types'
 import { auth } from '@/auth'
 
+// Initialize the OpenAI client
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || '',
-});
+  apiKey: process.env.OPENAI_API_KEY
+})
 
-let THREAD_ID = '';
-let RUN_ID = '';
-
-async function confirmPurchase(symbol: string, price: number, amount: number) {
-  'use server'
-
-  const aiState = getMutableAIState<typeof AI>()
-
-  const purchasing = createStreamableUI(
-    <div className="inline-flex items-start gap-1 md:items-center">
-      {spinner}
-      <p className="mb-2">
-        Purchasing {amount} ${symbol}...
-      </p>
-    </div>
-  )
-
-  const systemMessage = createStreamableUI(null)
-
-  runAsyncFnWithoutBlocking(async () => {
-    await sleep(1000)
-
-    purchasing.update(
-      <div className="inline-flex items-start gap-1 md:items-center">
-        {spinner}
-        <p className="mb-2">
-          Purchasing {amount} ${symbol}... working on it...
-        </p>
-      </div>
-    )
-
-    await sleep(1000)
-
-    purchasing.done(
-      <div>
-        <p className="mb-2">
-          You have successfully purchased {amount} ${symbol}. Total cost:{' '}
-          {formatNumber(amount * price)}
-        </p>
-      </div>
-    )
-
-    systemMessage.done(
-      <SystemMessage>
-        You have purchased {amount} shares of {symbol} at ${price}. Total cost ={' '}
-        {formatNumber(amount * price)}.
-      </SystemMessage>
-    )
-
-    aiState.done({
-      ...aiState.get(),
-      messages: [
-        ...aiState.get().messages,
-        {
-          id: nanoid(),
-          role: 'system',
-          content: `[User has purchased ${amount} shares of ${symbol} at ${price}. Total cost = ${
-            amount * price
-          }]`
-        }
-      ]
-    })
-  })
-
-  return {
-    purchasingUI: purchasing.value,
-    newMessage: {
-      id: nanoid(),
-      display: systemMessage.value
-    }
-  }
+export type AIState = {
+  chatId: string
+  messages: Message[]
 }
+
+export type UIState = {
+  id: string
+  display: React.ReactNode
+}[]
 
 async function submitUserMessage(content: string) {
   'use server'
 
-  const aiState = getMutableAIState<typeof AI>()
+  const aiState = getMutableAIState<AIState>()
 
   aiState.update({
     ...aiState.get(),
@@ -129,104 +67,63 @@ async function submitUserMessage(content: string) {
     ]
   })
 
-  const status = createStreamableUI(<SpinnerMessage />);
-  const textStream = createStreamableValue('');
-  const textNode = <BotMessage content={textStream.value} />;
+  const ui = createStreamableUI(
+    <SpinnerMessage />
+  )
 
-  const runQueue: any[] = [];
+  runAsyncFnWithoutBlocking(async () => {
+    const thread = await openai.beta.threads.create()
 
-  (async () => {
-    if (THREAD_ID) {
-      await openai.beta.threads.messages.create(THREAD_ID, {
-        role: 'user',
-        content: content,
-      });
+    await openai.beta.threads.messages.create(thread.id, {
+      role: 'user',
+      content: content
+    })
 
-      const run = await openai.beta.threads.runs.create(THREAD_ID, {
-        assistant_id: process.env.ASSISTANT_ID!,
-        stream: true,
-      });
+    const run = await openai.beta.threads.runs.create(thread.id, {
+      assistant_id: process.env.ASSISTANT_ID!,
+      instructions: "You are a helpful AI assistant."
+    })
 
-      runQueue.push({ id: nanoid(), run });
-    } else {
-      const run = await openai.beta.threads.createAndRun({
-        assistant_id: process.env.ASSISTANT_ID!,
-        stream: true,
-        thread: {
-          messages: [{ role: 'user', content: content }],
-        },
-      });
+    let response = await openai.beta.threads.runs.retrieve(thread.id, run.id)
 
-      runQueue.push({ id: nanoid(), run });
+    while (response.status !== 'completed') {
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      response = await openai.beta.threads.runs.retrieve(thread.id, run.id)
     }
 
-    while (runQueue.length > 0) {
-      const latestRun = runQueue.shift();
+    const messages = await openai.beta.threads.messages.list(thread.id)
 
-      if (latestRun) {
-        for await (const delta of latestRun.run) {
-          const { data, event } = delta;
+    const lastMessageForRun = messages.data
+      .filter(message => message.run_id === run.id && message.role === 'assistant')
+      .pop()
 
-          status.update(<SpinnerMessage>{event}</SpinnerMessage>);
-
-          if (event === 'thread.created') {
-            THREAD_ID = data.id;
-          } else if (event === 'thread.run.created') {
-            RUN_ID = data.id;
-          } else if (event === 'thread.message.delta') {
-            data.delta.content?.forEach((part: any) => {
-              if (part.type === 'text') {
-                if (part.text) {
-                  textStream.append(part.text.value);
-                }
-              }
-            });
-          } else if (event === 'thread.run.completed') {
-            aiState.done({
-              ...aiState.get(),
-              messages: [
-                ...aiState.get().messages,
-                {
-                  id: nanoid(),
-                  role: 'assistant',
-                  content: textStream.toString()
-                }
-              ]
-            });
-          }
-        }
+    if (lastMessageForRun) {
+      const newMessage: Message = {
+        id: nanoid(),
+        role: 'assistant',
+        content: lastMessageForRun.content[0].text.value
       }
+
+      aiState.done({
+        ...aiState.get(),
+        messages: [...aiState.get().messages, newMessage]
+      })
+
+      ui.update(<BotMessage content={newMessage.content} />)
     }
 
-    status.done(<SpinnerMessage>Completed</SpinnerMessage>);
-    textStream.done();
-  })();
+    ui.done()
+  })
 
   return {
     id: nanoid(),
-    display: (
-      <>
-        {status.value}
-        {textNode}
-      </>
-    )
+    display: ui.value
   }
 }
 
-export type AIState = {
-  chatId: string
-  messages: Message[]
-}
-
-export type UIState = {
-  id: string
-  display: React.ReactNode
-}[]
-
 export const AI = createAI<AIState, UIState>({
   actions: {
-    submitUserMessage,
-    confirmPurchase
+    submitUserMessage
   },
   initialUIState: [],
   initialAIState: { chatId: nanoid(), messages: [] },
@@ -243,7 +140,7 @@ export const AI = createAI<AIState, UIState>({
         return uiState
       }
     } else {
-      return
+      return []
     }
   },
   onSetAIState: async ({ state }) => {
@@ -258,8 +155,8 @@ export const AI = createAI<AIState, UIState>({
       const userId = session.user.id as string
       const path = `/chat/${chatId}`
 
-      const firstMessageContent = messages[0].content as string
-      const title = firstMessageContent.substring(0, 100)
+      const firstMessageContent = messages[0]?.content as string
+      const title = firstMessageContent?.substring(0, 100) || 'New Chat'
 
       const chat: Chat = {
         id: chatId,
@@ -271,23 +168,21 @@ export const AI = createAI<AIState, UIState>({
       }
 
       await saveChat(chat)
-    } else {
-      return
     }
   }
 })
 
-export const getUIStateFromAIState = (aiState: Chat) => {
+export const getUIStateFromAIState = (aiState: Chat): UIState => {
   return aiState.messages
     .filter(message => message.role !== 'system')
     .map((message, index) => ({
-      id: `${aiState.chatId}-${index}`,
+      id: `${aiState.id}-${index}`,
       display:
         message.role === 'user' ? (
-          <UserMessage>{message.content as string}</UserMessage>
+          <UserMessage key={message.id}>{message.content as string}</UserMessage>
         ) : message.role === 'assistant' &&
           typeof message.content === 'string' ? (
-          <BotMessage content={message.content} />
+          <BotMessage key={message.id} content={message.content} />
         ) : null
     }))
 }
