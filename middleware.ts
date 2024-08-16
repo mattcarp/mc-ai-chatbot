@@ -1,8 +1,21 @@
-import NextAuth from 'next-auth'
-import { authConfig } from './auth.config'
+import { clerkMiddleware } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 
-export default NextAuth(authConfig).auth
+// Define public routes that don't require authentication
+const publicRoutes = ["/login", "/signup", "/_vercel/insights/script.js"];
+
+export default clerkMiddleware((auth, req) => {
+  const isPublicRoute = publicRoutes.some(route => req.nextUrl.pathname.startsWith(route));
+
+  if (!auth.userId && !isPublicRoute) {
+    const loginUrl = new URL('/login', req.url);
+    loginUrl.searchParams.set('redirect_url', req.url);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  return NextResponse.next();
+});
 
 export const config = {
-  matcher: ['/((?!api|_next/static|_next/image|.*\\.png$).*)']
-}
+  matcher: ["/((?!.+\\.[\\w]+$|_next).*)", "/(api|trpc)(.*)"],
+};

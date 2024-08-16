@@ -2,7 +2,7 @@ import * as React from 'react'
 import Link from 'next/link'
 
 import { cn } from '@/lib/utils'
-import { auth } from '@/auth'
+import { getAuth } from '@/auth'
 import { Button, buttonVariants } from '@/components/ui/button'
 import {
   IconGitHub,
@@ -17,13 +17,13 @@ import { ChatHistory } from './chat-history'
 import { Session } from '@/lib/types'
 
 async function UserOrLogin() {
-  const session = (await auth()) as Session
+  const { userId, user } = await getAuth();
   return (
     <>
-      {session?.user ? (
+      {userId ? (
         <>
           <SidebarMobile>
-            <ChatHistory userId={session.user.id} />
+            <ChatHistory userId={userId} />
           </SidebarMobile>
           <SidebarToggle />
         </>
@@ -35,8 +35,8 @@ async function UserOrLogin() {
       )}
       <div className="flex items-center">
         <IconSeparator className="size-6 text-muted-foreground/50" />
-        {session?.user ? (
-          <UserMenu user={session.user} />
+        {userId ? (
+          <UserMenu user={{ id: userId }} />
         ) : (
           <Button variant="link" asChild className="-ml-2">
             <Link href="/login">Login</Link>

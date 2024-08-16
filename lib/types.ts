@@ -22,10 +22,8 @@ export type ServerActionResult<Result> = Promise<
 >
 
 export interface Session {
-  user: {
-    id: string
-    email: string
-  }
+  userId: string | null;
+  user: User | null;
 }
 
 export interface AuthResult {

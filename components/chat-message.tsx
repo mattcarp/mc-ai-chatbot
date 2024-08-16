@@ -68,7 +68,30 @@ export function ChatMessage({ message, ...props }: ChatMessageProps) {
                   {...props}
                 />
               )
-            }
+            },
+            a({ node, href, children, ...props }) {
+              const isCitation = /【\d+:\d+†source】/.test(String(children));
+              if (isCitation) {
+                return (
+                  <button
+                    className="inline-flex items-center justify-center text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-8 rounded-md px-3"
+                    onClick={() => {
+                      // You can implement the citation functionality here
+                      console.log(`Citation clicked: ${children}`);
+                      // For example, you could open a modal with the citation details
+                    }}
+                    {...props}
+                  >
+                    {children}
+                  </button>
+                );
+              }
+              return (
+                <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
+                  {children}
+                </a>
+              );
+            },
           }}
         >
           {message.content}

@@ -1,11 +1,9 @@
 'use server'
 
-import { signIn } from '@/auth'
 import { ResultCode, getStringFromBuffer } from '@/lib/utils'
 import { z } from 'zod'
 import { kv } from '@vercel/kv'
 import { getUser } from '../login/actions'
-import { AuthError } from 'next-auth'
 
 export async function createUser(
   email: string,
@@ -73,33 +71,14 @@ export async function signup(
       const result = await createUser(email, hashedPassword, salt)
 
       if (result.resultCode === ResultCode.UserCreated) {
-        await signIn('credentials', {
-          email,
-          password,
-          redirect: false
-        })
+        // Clerk sign-up logic can be added here
       }
 
       return result
     } catch (error) {
-      if (error instanceof AuthError) {
-        switch (error.type) {
-          case 'CredentialsSignin':
-            return {
-              type: 'error',
-              resultCode: ResultCode.InvalidCredentials
-            }
-          default:
-            return {
-              type: 'error',
-              resultCode: ResultCode.UnknownError
-            }
-        }
-      } else {
-        return {
-          type: 'error',
-          resultCode: ResultCode.UnknownError
-        }
+      return {
+        type: 'error',
+        resultCode: ResultCode.UnknownError
       }
     }
   } else {

@@ -1,5 +1,6 @@
 import { GeistSans } from 'geist/font/sans'
 import { GeistMono } from 'geist/font/mono'
+import { ClerkProvider } from '@clerk/nextjs';
 
 import '@/app/globals.css'
 import { cn } from '@/lib/utils'
@@ -36,6 +37,11 @@ interface RootLayoutProps {
 }
 
 export default function RootLayout({ children }: RootLayoutProps) {
+  // Add this check at the top of your component
+  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+    throw new Error('Missing NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY');
+  }
+
   return (
     <html lang="en" suppressHydrationWarning>
       <body
@@ -46,18 +52,20 @@ export default function RootLayout({ children }: RootLayoutProps) {
         )}
       >
         <Toaster position="top-center" />
-        <Providers
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          <div className="flex flex-col min-h-screen">
-            <Header />
-            <main className="flex flex-col flex-1 bg-muted/50">{children}</main>
-          </div>
-          <TailwindIndicator />
-        </Providers>
+        <ClerkProvider publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}>
+          <Providers
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+            disableTransitionOnChange
+          >
+            <div className="flex flex-col min-h-screen">
+              <Header />
+              <main className="flex flex-col flex-1 bg-muted/50">{children}</main>
+            </div>
+            <TailwindIndicator />
+          </Providers>
+        </ClerkProvider>
       </body>
     </html>
   )

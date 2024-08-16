@@ -1,7 +1,5 @@
-import { nanoid } from '@/lib/utils'
-import { Chat } from '@/components/chat'
-import { AI } from '@/lib/chat/actions'
-import { auth } from '@/auth'
+import { AIProvider } from '@/components/ai-provider'
+import { ChatWrapper } from '@/components/chat-wrapper'
 import { Session } from '@/lib/types'
 import { getMissingKeys } from '@/app/actions'
 
@@ -10,13 +8,14 @@ export const metadata = {
 }
 
 export default async function IndexPage() {
-  const id = nanoid()
-  const session = (await auth()) as Session
+  const userId = null
+  const user = null
+  const session: Session = { userId, user }
   const missingKeys = await getMissingKeys()
 
   return (
-    <AI initialAIState={{ chatId: id, messages: [] }}>
-      <Chat id={id} session={session} missingKeys={missingKeys} />
-    </AI>
+    <AIProvider>
+      <ChatWrapper session={session} missingKeys={missingKeys} />
+    </AIProvider>
   )
 }

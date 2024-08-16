@@ -1,11 +1,9 @@
 'use server'
 
-import { signIn } from '@/auth'
-import { User } from '@/lib/types'
-import { AuthError } from 'next-auth'
 import { z } from 'zod'
 import { kv } from '@vercel/kv'
 import { ResultCode } from '@/lib/utils'
+import { User } from '@/types'// Adjust the import path as needed
 
 export async function getUser(email: string) {
   const user = await kv.hgetall<User>(`user:${email}`)
@@ -36,12 +34,7 @@ export async function authenticate(
       })
 
     if (parsedCredentials.success) {
-      await signIn('credentials', {
-        email,
-        password,
-        redirect: false
-      })
-
+      // Clerk sign-in logic can be added here
       return {
         type: 'success',
         resultCode: ResultCode.UserLoggedIn
@@ -53,19 +46,9 @@ export async function authenticate(
       }
     }
   } catch (error) {
-    if (error instanceof AuthError) {
-      switch (error.type) {
-        case 'CredentialsSignin':
-          return {
-            type: 'error',
-            resultCode: ResultCode.InvalidCredentials
-          }
-        default:
-          return {
-            type: 'error',
-            resultCode: ResultCode.UnknownError
-          }
-      }
+    return {
+      type: 'error',
+      resultCode: ResultCode.UnknownError
     }
   }
 }

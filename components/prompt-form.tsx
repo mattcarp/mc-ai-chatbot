@@ -18,13 +18,19 @@ import { useEnterSubmit } from '@/lib/hooks/use-enter-submit'
 import { nanoid } from 'nanoid'
 import { useRouter } from 'next/navigation'
 
-export function PromptForm({
-  input,
-  setInput
-}: {
+interface PromptFormProps {
   input: string
   setInput: (value: string) => void
-}) {
+  onSubmit: (message: string) => void
+  isLoading: boolean
+}
+
+export function PromptForm({
+  input,
+  setInput,
+  onSubmit,
+  isLoading
+}: PromptFormProps) {
   const router = useRouter()
   const { formRef, onKeyDown } = useEnterSubmit()
   const inputRef = React.useRef<HTMLTextAreaElement>(null)

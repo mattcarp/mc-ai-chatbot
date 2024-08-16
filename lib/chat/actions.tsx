@@ -33,13 +33,9 @@ import {
 import { saveChat } from '@/app/actions'
 import { SpinnerMessage, UserMessage } from '@/components/stocks/message'
 import { Chat, Message } from '@/lib/types'
-import { auth } from '@/auth'
+import { requireAuth } from "@/auth";
 
-// Initialize the OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-})
-
+// Types
 export type AIState = {
   chatId: string
   messages: Message[]
@@ -50,74 +46,87 @@ export type UIState = {
   display: React.ReactNode
 }[]
 
-async function submitUserMessage(content: string) {
+// Initialize OpenAI client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
+// Server Actions
+export async function getUIState() {
   'use server'
+  
+  try {
+    const { userId } = await requireAuth();
+    const aiState = getAIState() as Chat
 
-  const aiState = getMutableAIState<AIState>()
+    if (aiState) {
+      return getUIStateFromAIState(aiState)
+    }
+  } catch (error) {
+    console.error('Error in getUIState:', error);
+    return []; // Return an empty array instead of throwing an error
+  }
+  return []
+}
 
-  aiState.update({
-    ...aiState.get(),
-    messages: [
-      ...aiState.get().messages,
-      {
-        id: nanoid(),
-        role: 'user',
-        content
-      }
-    ]
-  })
+export async function setAIState(state: AIState) {
+  'use server'
+  
+  try {
+    const { userId } = await requireAuth();
+    const { chatId, messages } = state
 
-  const ui = createStreamableUI(
-    <SpinnerMessage />
-  )
+    const createdAt = new Date()
+    const path = `/chat/${chatId}`
 
-  runAsyncFnWithoutBlocking(async () => {
-    const thread = await openai.beta.threads.create()
+    const firstMessageContent = messages[0]?.content as string
+    const title = firstMessageContent?.substring(0, 100) || 'New Chat'
 
-    await openai.beta.threads.messages.create(thread.id, {
-      role: 'user',
-      content: content
-    })
-
-    const run = await openai.beta.threads.runs.create(thread.id, {
-      assistant_id: process.env.ASSISTANT_ID!,
-      instructions: "You are a helpful AI assistant."
-    })
-
-    let response = await openai.beta.threads.runs.retrieve(thread.id, run.id)
-
-    while (response.status !== 'completed') {
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      response = await openai.beta.threads.runs.retrieve(thread.id, run.id)
+    const chat: Chat = {
+      id: chatId,
+      title,
+      userId,
+      createdAt,
+      messages,
+      path
     }
 
-    const messages = await openai.beta.threads.messages.list(thread.id)
+    await saveChat(chat)
+  } catch (error) {
+    console.error('Error in setAIState:', error);
+    // Handle the error appropriately, maybe by returning an error object
+  }
+}
 
-    const lastMessageForRun = messages.data
-      .filter(message => message.run_id === run.id && message.role === 'assistant')
-      .pop()
+export async function submitUserMessage(message: string) {
+  'use server'
+  
+  console.log('submitUserMessage called with:', message);
+  
+  try {
+    const { userId } = await requireAuth();
+    console.log('User authenticated with ID:', userId);
 
-    if (lastMessageForRun) {
-      const newMessage: Message = {
-        id: nanoid(),
-        role: 'assistant',
-        content: lastMessageForRun.content[0].text.value
-      }
-
-      aiState.done({
-        ...aiState.get(),
-        messages: [...aiState.get().messages, newMessage]
-      })
-
-      ui.update(<BotMessage content={newMessage.content} />)
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY is not set');
     }
 
-    ui.done()
-  })
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY
+    });
 
-  return {
-    id: nanoid(),
-    display: ui.value
+    console.log('Sending request to OpenAI...');
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [{ role: "user", content: message }],
+    });
+
+    console.log('OpenAI response received:', response);
+
+    return { result: response.choices[0].message.content };
+  } catch (error) {
+    console.error('Error in submitUserMessage:', error);
+    return { error: error.message || 'An error occurred while processing your message' };
   }
 }
 
@@ -127,49 +136,7 @@ export const AI = createAI<AIState, UIState>({
   },
   initialUIState: [],
   initialAIState: { chatId: nanoid(), messages: [] },
-  onGetUIState: async () => {
-    'use server'
-
-    const session = await auth()
-
-    if (session && session.user) {
-      const aiState = getAIState() as Chat
-
-      if (aiState) {
-        const uiState = getUIStateFromAIState(aiState)
-        return uiState
-      }
-    } else {
-      return []
-    }
-  },
-  onSetAIState: async ({ state }) => {
-    'use server'
-
-    const session = await auth()
-
-    if (session && session.user) {
-      const { chatId, messages } = state
-
-      const createdAt = new Date()
-      const userId = session.user.id as string
-      const path = `/chat/${chatId}`
-
-      const firstMessageContent = messages[0]?.content as string
-      const title = firstMessageContent?.substring(0, 100) || 'New Chat'
-
-      const chat: Chat = {
-        id: chatId,
-        title,
-        userId,
-        createdAt,
-        messages,
-        path
-      }
-
-      await saveChat(chat)
-    }
-  }
+  onGetUIState: getUIState
 })
 
 export const getUIStateFromAIState = (aiState: Chat): UIState => {

@@ -1,18 +1,9 @@
-import { auth } from '@/auth'
-import SignupForm from '@/components/signup-form'
-import { Session } from '@/lib/types'
-import { redirect } from 'next/navigation'
+import { SignUp } from '@clerk/nextjs';
 
-export default async function SignupPage() {
-  const session = (await auth()) as Session
-
-  if (session) {
-    redirect('/')
-  }
-
+export default function SignupPage() {
   return (
     <main className="flex flex-col p-4">
-      <SignupForm />
+      <SignUp path="/signup" routing="path" signInUrl="/login" />
     </main>
-  )
+  );
 }
