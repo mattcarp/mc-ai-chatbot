@@ -1,90 +1,48 @@
 'use server'
 
-import { ResultCode, getStringFromBuffer } from '@/lib/utils'
-import { z } from 'zod'
-import { kv } from '@vercel/kv'
-import { getUser } from '../login/actions'
+import { auth } from "@clerk/nextjs"
+import { ResultCode, getMessageFromCode } from "@/lib/utils"
+import { createAI, deleteAI, updateAI } from "../api/functions"
+import { revalidatePath } from "next/cache"
 
-export async function createUser(
-  email: string,
-  hashedPassword: string,
-  salt: string
-) {
-  const existingUser = await getUser(email)
+export async function signUp(prevState: any, formData: FormData) {
+  try {
+    const email = formData.get('email') as string
+    const password = formData.get('password') as string
 
-  if (existingUser) {
-    return {
-      type: 'error',
-      resultCode: ResultCode.UserAlreadyExists
-    }
-  } else {
-    const user = {
-      id: crypto.randomUUID(),
-      email,
-      password: hashedPassword,
-      salt
-    }
-
-    await kv.hmset(`user:${email}`, user)
-
-    return {
-      type: 'success',
-      resultCode: ResultCode.UserCreated
-    }
-  }
-}
-
-interface Result {
-  type: string
-  resultCode: ResultCode
-}
-
-export async function signup(
-  _prevState: Result | undefined,
-  formData: FormData
-): Promise<Result | undefined> {
-  const email = formData.get('email') as string
-  const password = formData.get('password') as string
-
-  const parsedCredentials = z
-    .object({
-      email: z.string().email(),
-      password: z.string().min(6)
-    })
-    .safeParse({
-      email,
-      password
-    })
-
-  if (parsedCredentials.success) {
-    const salt = crypto.randomUUID()
-
-    const encoder = new TextEncoder()
-    const saltedPassword = encoder.encode(password + salt)
-    const hashedPasswordBuffer = await crypto.subtle.digest(
-      'SHA-256',
-      saltedPassword
-    )
-    const hashedPassword = getStringFromBuffer(hashedPasswordBuffer)
-
-    try {
-      const result = await createUser(email, hashedPassword, salt)
-
-      if (result.resultCode === ResultCode.UserCreated) {
-        // Clerk sign-up logic can be added here
+    if (!email || !password) {
+      return {
+        type: 'error',
+        resultCode: ResultCode.InvalidSubmission
       }
+    }
 
-      return result
-    } catch (error) {
+    // Use Clerk's API to create a new user
+    const { createUser } = await import('@clerk/nextjs/server')
+    const user = await createUser({
+      emailAddress: email,
+      password: password,
+    })
+
+    if (!user) {
       return {
         type: 'error',
         resultCode: ResultCode.UnknownError
       }
     }
-  } else {
+
+    // Additional logic if needed (e.g., creating an AI assistant for the new user)
+
+    revalidatePath('/')
+    return {
+      type: 'success',
+      resultCode: ResultCode.UserCreated
+    }
+  } catch (error: any) {
+    console.error('Sign up error:', error)
     return {
       type: 'error',
-      resultCode: ResultCode.InvalidCredentials
+      resultCode: ResultCode.UnknownError
     }
   }
 }
