@@ -20,9 +20,12 @@ module.exports = {
     if (!isServer) {
       config.resolve.fallback = {
         ...config.resolve.fallback,
-        crypto: false,
+        crypto: require.resolve('crypto-browserify')
       };
     }
     return config;
+  },
+  experimental: {
+    esmExternals: 'loose',
   },
 }
